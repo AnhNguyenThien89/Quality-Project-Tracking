@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delivery capacity and burn tracker</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; }
+  .cp {
+    --bg: #f2f5f7; --panel: #ffffff; --ink: #1f2a33; --muted: #5b6b78; --line: #cbd5dc;
+    --calc: #e2eeed; --accent: #0f766e; --on-accent: #ffffff;
+    --c1: #3d5a80; --c2: #b7791f; --c3: #0f766e; --warn: #b42318;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 20px 64px; min-height: 100vh;
+  }
+  @media (prefers-color-scheme: dark) {
+    .cp {
+      --bg: #12181e; --panel: #1a232b; --ink: #e7edf2; --muted: #9aa8b4; --line: #2f3d49;
+      --calc: #17302f; --accent: #4fb8ae; --on-accent: #0b1a19;
+      --c1: #7f9fcc; --c2: #e0a548; --c3: #4fb8ae; --warn: #f08a7e;
+    }
+  }
+  .cp *, .cp *::before, .cp *::after { box-sizing: border-box; }
+  .cp .wrap { max-width: 960px; margin: 0 auto; }
+  .cp h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.015em; }
+  .cp .sub { margin: 0 0 28px; color: var(--muted); max-width: 62ch; }
+  .cp .sec { border-top: 2px solid var(--ink); padding: 18px 0 30px; }
+  .cp h2 { font-size: 19px; margin: 0 0 4px; font-weight: 650; }
+  .cp .hint { margin: 0 0 16px; color: var(--muted); font-size: 14px; max-width: 70ch; }
+  .cp .tablewrap { overflow-x: auto; }
+  .cp table { width: 100%; border-collapse: collapse; }
+  .cp th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--ink); }
+  .cp td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .cp th.r, .cp td.r { text-align: right; }
+  .cp .nums { font-variant-numeric: tabular-nums; }
+  .cp input[type=number], .cp input[type=text], .cp select {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; width: 100%; min-width: 64px;
+  }
+  .cp input[type=number] { font-variant-numeric: tabular-nums; }
+  .cp #capRows input[type=number] { text-align: right; }
+  .cp .calc { background: var(--calc); border-radius: 4px; padding: 5px 10px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
+  .cp .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-top: 20px; align-items: start; }
+  .cp .fields label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .cp .formula { font-size: 13px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .cp button, .cp .btn {
+    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 6px 14px; cursor: pointer; display: inline-block;
+  }
+  .cp button:hover, .cp .btn:hover { border-color: var(--muted); }
+  .cp .primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  .cp .sr { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  .cp .btn:focus-within, .cp button:focus-visible, .cp input:focus-visible, .cp select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cp .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .cp .msg { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .cp .msg.err { color: var(--warn); }
+  .cp .stats { display: flex; gap: 28px; flex-wrap: wrap; margin: 18px 0 4px; }
+  .cp .stat b { display: block; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .cp .stat span { font-size: 13px; color: var(--muted); }
+  .cp .hidden { display: none; }
+  .cp .colpick { margin-top: 14px; max-width: 360px; }
+  .cp .colpick label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .cp .bysprint { margin-top: 18px; max-width: 520px; }
+  .cp .bysprint h3 { font-size: 15px; margin: 0 0 6px; }
+  .cp table.report { background: var(--panel); margin-top: 22px; }
+  .cp .report th { border: 1px solid var(--line); border-bottom: 2px solid var(--ink); padding: 8px 10px; color: var(--ink); }
+  .cp .report td { border: 1px solid var(--line); padding: 8px 10px; }
+  .cp .report td.blank { background: transparent; }
+  .cp .report tfoot td { background: var(--calc); }
+  .cp .report .big { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .cp .goalcell { display: flex; gap: 6px; align-items: center; }
+  .cp .x { padding: 2px 9px; line-height: 1.2; color: var(--muted); }
+  .cp .add { margin-top: 12px; }
+  .cp .chart svg { width: 100%; height: auto; display: block; max-width: 720px; }
+  .cp .chartnote { margin-top: 8px; font-size: 14px; color: var(--muted); }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="cp"><div class="wrap">
+
+  <h1>Delivery capacity and burn tracker</h1>
+  <p class="sub">Set the annual capacity, import the Jira export to get actual effort, then compare the two.</p>
+
+  <section class="sec">
+    <h2>Annual delivery capacity</h2>
+    <p class="hint">Enter story points per sprint and the number of sprints for each scenario. Planned annual delivery capacity is calculated from the totals.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Estimate</th><th>Period</th><th class="r">Story points per sprint</th><th class="r">Sprints</th><th class="r">Total (SP)</th>
+        </tr></thead>
+        <tbody id="capRows"></tbody>
+        <tfoot><tr>
+          <td colspan="4"><b>Gross team capacity</b></td>
+          <td><div class="calc" id="gross">0</div></td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div class="fields">
+      <div>
+        <label for="loss">Expected availability loss (%)</label>
+        <input type="number" id="loss" min="0" max="100" step="any" value="10">
+        <div class="formula">Holidays, vacation, business stuck</div>
+      </div>
+      <div>
+        <label for="focus">Focus factor</label>
+        <input type="number" id="focus" min="0" max="1" step="0.01" value="0.9">
+        <div class="formula">Context switching. Use 0.85 to 0.9</div>
+      </div>
+      <div>
+        <label>Planned annual delivery capacity</label>
+        <div class="calc" id="capVal">0 SP</div>
+        <div class="formula" id="capFormula"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Actual effort from Jira</h2>
+    <p class="hint">Upload the Excel file exported from Jira. The tool adds up the Story Points column for every ticket in the file.</p>
+    <div class="row">
+      <label class="btn primary"><input type="file" id="file" class="sr" accept=".xlsx,.xls,.csv">Upload Jira export</label>
+      <button type="button" id="clear" class="hidden">Remove file</button>
+      <span id="fileName" class="msg" style="margin:0"></span>
+    </div>
+    <div class="msg" id="upMsg">No file uploaded yet. Actual spent effort counts as 0 until you upload one.</div>
+    <div class="colpick hidden" id="colRow">
+      <label for="colSel">Story Points column</label>
+      <select id="colSel"></select>
+    </div>
+    <div class="stats hidden" id="stats">
+      <div class="stat"><b id="stTickets">0</b><span>tickets in file</span></div>
+      <div class="stat"><b id="stWith">0</b><span>tickets with Story Points</span></div>
+      <div class="stat"><b id="stTotal">0</b><span>total Story Points</span></div>
+    </div>
+    <div class="bysprint hidden" id="sprintWrap">
+      <h3>Story Points by sprint</h3>
+      <table>
+        <thead><tr><th>Sprint</th><th class="r">Tickets</th><th class="r">Story Points</th></tr></thead>
+        <tbody id="sprintBody"></tbody>
+      </table>
+      <div class="msg">Each ticket counts toward the last Sprint column that has a value.</div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Planning report</h2>
+    <p class="hint">The first row comes from the three fields below. Add rows for other goals.</p>
+    <div class="fields" style="margin-top:0">
+      <div>
+        <label for="gName">Goals</label>
+        <input type="text" id="gName" value="1,2,3">
+      </div>
+      <div>
+        <label for="gEffort">Planned effort committed goals</label>
+        <input type="number" id="gEffort" min="0" step="any" value="47">
+      </div>
+      <div>
+        <label for="gCont">Planned contingency for uncertainty</label>
+        <input type="number" id="gCont" min="0" step="any" value="7">
+      </div>
+    </div>
+
+    <div class="tablewrap">
+      <table class="report">
+        <thead><tr>
+          <th>Goals</th>
+          <th>Planned effort committed goals</th>
+          <th>Planned contingency for uncertainty</th>
+          <th>Planned annual delivery capacity</th>
+        </tr></thead>
+        <tbody id="goalRows"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3">Total planned effort committed goals + contingency for uncertainty<br><span class="big nums" id="totalBreak"></span></td>
+            <td>Original: <span class="big nums" id="origVal"></span></td>
+          </tr>
+          <tr>
+            <td colspan="3">Actual spent effort: <span class="big nums" id="actualVal"></span></td>
+            <td>Remaining on <span id="remDate"></span>: <span class="big nums" id="remVal"></span></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <button type="button" class="add" id="addGoal">Add goal row</button>
+  </section>
+
+  <section class="sec">
+    <h2>Capacity and actual spend</h2>
+    <p class="hint">All three bars use the same scale. Remaining is the original capacity minus actual spent effort.</p>
+    <div class="chart" id="chart"></div>
+    <div class="chartnote" id="chartNote"></div>
+  </section>
+
+</div></div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const fmt = n => String(Math.round((+n || 0) * 100) / 100);
+  const num = v => { const x = parseFloat(String(v).replace(',', '.')); return isFinite(x) ? x : 0; };
+  const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const state = {
+    est: [
+      { name: 'Optimistic',  period: 'Aug \u2192 Dec 2026', sp: 15, sprints: 7 },
+      { name: 'Most likely', period: 'Jan \u2192 Mar 2027', sp: 10, sprints: 4 },
+      { name: 'Pessimistic', period: 'Apr \u2192 May 2027', sp: 5,  sprints: 3 }
+    ],
+    loss: 10, focus: 0.9,
+    goal: { name: '1,2,3', effort: 47, cont: 7 },
+    extra: [],
+    upload: null
+  };
+
+  /* ---------- Capacity table ---------- */
+  function buildCap() {
+    const tb = $('capRows');
+    tb.innerHTML = '';
+    state.est.forEach((e, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><b>' + e.name + '</b></td>' +
+        '<td><input type="text" data-k="period" aria-label="' + e.name + ' period"></td>' +
+        '<td><input type="number" min="0" step="any" data-k="sp" aria-label="' + e.name + ' story points per sprint"></td>' +
+        '<td><input type="number" min="0" step="1" data-k="sprints" aria-label="' + e.name + ' sprint count"></td>' +
+        '<td><div class="calc" id="tot' + i + '"></div></td>';
+      tr.querySelectorAll('input').forEach(inp => {
+        inp.value = e[inp.dataset.k];
+        inp.addEventListener('input', () => {
+          const k = inp.dataset.k;
+          e[k] = k === 'period' ? inp.value : num(inp.value);
+          update();
+        });
+      });
+      tb.appendChild(tr);
+    });
+  }
+
+  /* ---------- Goal rows ---------- */
+  function renderGoalRows() {
+    const tb = $('goalRows');
+    tb.innerHTML = '';
+    const r0 = document.createElement('tr');
+    r0.innerHTML = '<td id="g0n"></td><td class="nums" id="g0e"></td><td class="nums" id="g0c"></td><td class="blank"></td>';
+    tb.appendChild(r0);
+    state.extra.forEach(g => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><div class="goalcell"><input type="text" aria-label="Goal name">' +
+        '<button type="button" class="x" title="Remove row" aria-label="Remove row">\u00d7</button></div></td>' +
+        '<td><input type="number" min="0" step="any" aria-label="Planned effort committed goals"></td>' +
+        '<td><input type="number" min="0" step="any" aria-label="Planned contingency for uncertainty"></td>' +
+        '<td class="blank"></td>';
+      const ins = tr.querySelectorAll('input');
+      ins[0].value = g.name; ins[1].value = g.effort; ins[2].value = g.cont;
+      ins[0].addEventListener('input', () => { g.name = ins[0].value; });
+      ins[1].addEventListener('input', () => { g.effort = num(ins[1].value); update(); });
+      ins[2].addEventListener('input', () => { g.cont = num(ins[2].value); update(); });
+      tr.querySelector('.x').addEventListener('click', () => {
+        state.extra = state.extra.filter(x => x !== g);
+        renderGoalRows(); update();
+      });
+      tb.appendChild(tr);
+    });
+  }
+
+  /* ---------- Excel upload ---------- */
+  function setMsg(text, isErr) {
+    const m = $('upMsg');
+    m.textContent = text;
+    m.className = 'msg' + (isErr ? ' err' : '');
+  }
+
+  function readFile(f) {
+    const rd = new FileReader();
+    rd.onerror = () => setMsg('The file could not be read. Try exporting it from Jira again.', true);
+    rd.onload = ev => {
+      try {
+        if (typeof XLSX === 'undefined') {
+          setMsg('The Excel reader did not load. Check that this page can reach cdnjs.cloudflare.com.', true);
+          return;
+        }
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        let hi = aoa.slice(0, 10).findIndex(r => r.some(c => norm(c).includes('storypoint')));
+        if (hi < 0) hi = 0;
+        const hrow = aoa[hi] || [];
+        const headers = hrow.map((h, i) => String(h).trim() || ('Column ' + (i + 1)));
+        const data = aoa.slice(hi + 1).filter(r => r.some(c => String(c).trim() !== ''));
+        if (!data.length) { setMsg('No ticket rows found in the first sheet of this file.', true); return; }
+        let sp = headers.findIndex(h => ['storypoints', 'storypointestimate'].includes(norm(h)));
+        if (sp < 0) sp = headers.findIndex(h => norm(h).includes('storypoint'));
+        state.upload = {
+          name: f.name, headers, data, sp,
+          sprintIdx: headers.map((h, i) => norm(h).startsWith('sprint') ? i : -1).filter(i => i >= 0)
+        };
+        buildColSel();
+        update();
+      } catch (err) {
+        setMsg('This file could not be parsed as Excel or CSV: ' + err.message, true);
+      }
+    };
+    rd.readAsArrayBuffer(f);
+  }
+
+  function buildColSel() {
+    const u = state.upload, sel = $('colSel');
+    sel.innerHTML = '';
+    if (u.sp < 0) {
+      const o = document.createElement('option');
+      o.value = '-1'; o.textContent = 'Select a column\u2026';
+      sel.appendChild(o);
+    }
+    u.headers.forEach((h, i) => {
+      const o = document.createElement('option');
+      o.value = String(i); o.textContent = h;
+      sel.appendChild(o);
+    });
+    sel.value = String(u.sp);
+  }
+
+  function computeUpload() {
+    const u = state.upload;
+    if (!u) return null;
+    const out = { tickets: u.data.length, withSp: 0, total: 0, sprints: [] };
+    if (u.sp < 0) return out;
+    const map = {};
+    u.data.forEach(r => {
+      const raw = r[u.sp];
+      const has = String(raw).trim() !== '' && isFinite(parseFloat(String(raw).replace(',', '.')));
+      const v = has ? num(raw) : 0;
+      if (has) { out.withSp++; out.total += v; }
+      let sprint = 'No sprint';
+      u.sprintIdx.forEach(i => { const s = String(r[i]).trim(); if (s) sprint = s; });
+      map[sprint] = map[sprint] || { name: sprint, tickets: 0, sp: 0 };
+      map[sprint].tickets++; map[sprint].sp += v;
+    });
+    out.sprints = Object.values(map).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    return out;
+  }
+
+  /* ---------- Chart ---------- */
+  function chartSvg(cap, act, rem) {
+    const W = 640, rowH = 56, top = 14, labelW = 150, padR = 70;
+    const leftPad = labelW + (rem < 0 ? 52 : 0);
+    const H = top + rowH * 3 + 8;
+    const plotW = W - leftPad - padR;
+    const vmax = Math.max(cap, act, 1), vmin = Math.min(0, rem);
+    const X = v => leftPad + (v - vmin) / (vmax - vmin) * plotW;
+    const rows = [
+      ['Original capacity', cap, 'var(--c1)'],
+      ['Actual spent', act, 'var(--c2)'],
+      ['Remaining', rem, rem < 0 ? 'var(--warn)' : 'var(--c3)']
+    ];
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Original capacity ' + fmt(cap) +
+            ', actual spent ' + fmt(act) + ', remaining ' + fmt(rem) + ' story points">';
+    s += '<line x1="' + X(0) + '" y1="' + (top - 4) + '" x2="' + X(0) + '" y2="' + (top + rowH * 3 - 6) + '" stroke="var(--muted)"/>';
+    rows.forEach((r, i) => {
+      const y = top + i * rowH + 6, h = 30;
+      const x0 = X(0), x1 = X(r[1]);
+      const x = Math.min(x0, x1), w = Math.max(Math.abs(x1 - x0), 1);
+      s += '<text x="' + (labelW - 12) + '" y="' + (y + h / 2 + 5) + '" text-anchor="end" fill="var(--ink)" font-size="14">' + r[0] + '</text>';
+      s += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="2" fill="' + r[2] + '"/>';
+      const pos = r[1] >= 0;
+      s += '<text x="' + (pos ? x1 + 8 : x1 - 8) + '" y="' + (y + h / 2 + 5) + '" text-anchor="' + (pos ? 'start' : 'end') +
+           '" fill="var(--ink)" font-size="15" font-weight="600">' + fmt(r[1]) + '</text>';
+    });
+    return s + '</svg>';
+  }
+
+  /* ---------- Main update ---------- */
+  function update() {
+    // capacity
+    let gross = 0;
+    state.est.forEach((e, i) => { const t = e.sp * e.sprints; gross += t; $('tot' + i).textContent = fmt(t); });
+    $('gross').textContent = fmt(gross);
+    const lossAmt = gross * state.loss / 100;
+    const exact = (gross - lossAmt) * state.focus;
+    const cap = Math.round(exact);
+    $('capVal').textContent = fmt(cap) + ' SP';
+    $('capFormula').textContent = '(' + fmt(gross) + ' \u2212 ' + fmt(lossAmt) + ') \u00d7 ' + fmt(state.focus) + ' = ' + fmt(exact) +
+      (Math.abs(exact - cap) > 1e-9 ? ', rounded to ' + fmt(cap) : '');
+
+    // upload
+    const up = computeUpload();
+    const actual = up ? up.total : 0;
+    const clearBtn = $('clear');
+    if (!up) {
+      $('stats').classList.add('hidden'); $('sprintWrap').classList.add('hidden');
+      $('colRow').classList.add('hidden'); clearBtn.classList.add('hidden');
+      $('fileName').textContent = '';
+    } else {
+      clearBtn.classList.remove('hidden');
+      $('colRow').classList.remove('hidden');
+      $('fileName').textContent = state.upload.name;
+      if (state.upload.sp < 0) {
+        setMsg('No Story Points column was found. Select the column that holds Story Points.', true);
+        $('stats').classList.add('hidden'); $('sprintWrap').classList.add('hidden');
+      } else {
+        setMsg('Story Points are read from the column "' + state.upload.headers[state.upload.sp] + '".', false);
+        $('stats').classList.remove('hidden');
+        $('stTickets').textContent = up.tickets;
+        $('stWith').textContent = up.withSp;
+        $('stTotal').textContent = fmt(up.total);
+        const body = $('sprintBody');
+        body.innerHTML = '';
+        up.sprints.forEach(s => {
+          const tr = document.createElement('tr');
+          const a = document.createElement('td'); a.textContent = s.name;
+          const b = document.createElement('td'); b.className = 'r nums'; b.textContent = s.tickets;
+          const c = document.createElement('td'); c.className = 'r nums'; c.textContent = fmt(s.sp);
+          tr.append(a, b, c); body.appendChild(tr);
+        });
+        $('sprintWrap').classList.toggle('hidden', up.sprints.length < 1);
+      }
+    }
+
+    // report
+    $('g0n').textContent = state.goal.name || '-';
+    $('g0e').textContent = fmt(state.goal.effort);
+    $('g0c').textContent = fmt(state.goal.cont);
+    const subs = [state.goal].concat(state.extra).map(g => g.effort + g.cont);
+    const total = subs.reduce((a, b) => a + b, 0);
+    $('totalBreak').textContent = subs.length === 1
+      ? fmt(state.goal.effort) + ' + ' + fmt(state.goal.cont) + ' = ' + fmt(total)
+      : subs.map(fmt).join(' + ') + ' = ' + fmt(total);
+    const d = new Date();
+    $('remDate').textContent = d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+    const rem = cap - actual;
+    $('origVal').textContent = fmt(cap);
+    $('actualVal').textContent = fmt(actual);
+    $('remVal').textContent = fmt(rem);
+
+    // chart
+    $('chart').innerHTML = chartSvg(cap, actual, rem);
+    $('chartNote').textContent = cap > 0
+      ? 'Spent ' + fmt(actual / cap * 100) + '% of the original capacity. ' +
+        (rem < 0 ? 'Over capacity by ' + fmt(-rem) + ' SP.' : fmt(rem / cap * 100) + '% remains.')
+      : 'Enter capacity values to see the comparison.';
+  }
+
+  /* ---------- Wiring ---------- */
+  $('loss').addEventListener('input', e => { state.loss = num(e.target.value); update(); });
+  $('focus').addEventListener('input', e => { state.focus = num(e.target.value); update(); });
+  $('gName').addEventListener('input', e => { state.goal.name = e.target.value; update(); });
+  $('gEffort').addEventListener('input', e => { state.goal.effort = num(e.target.value); update(); });
+  $('gCont').addEventListener('input', e => { state.goal.cont = num(e.target.value); update(); });
+  $('addGoal').addEventListener('click', () => {
+    state.extra.push({ name: 'New goal', effort: 0, cont: 0 });
+    renderGoalRows(); update();
+  });
+  $('file').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
+  $('colSel').addEventListener('change', e => { state.upload.sp = parseInt(e.target.value, 10); update(); });
+  $('clear').addEventListener('click', () => {
+    state.upload = null; $('file').value = '';
+    setMsg('No file uploaded yet. Actual spent effort counts as 0 until you upload one.', false);
+    update();
+  });
+
+  buildCap();
+  renderGoalRows();
+  update();
+})();
+</script>
+</body>
+</html>
